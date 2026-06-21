@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DespachoVoz - Control de Despachos por Voz</title>
+    <!-- Tailwind CSS para Diseño Rápido y Responsivo -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tailwind Config para extender colores personalizados -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        industrial: {
+                            950: '#090d16',
+                            900: '#0f172a',
+                            800: '#1e293b',
+                            700: '#334155',
+                            accent: '#10b981', // Verde Esmeralda para Estados Activos
+                            warning: '#f59e0b', // Naranja para advertencias / modo offline
+                            action: '#3b82f6'  // Azul para Acciones de Guardado
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Iconos Lucide -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Animación concéntrica de onda para el micrófono activo */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); opacity: 1; }
+            50% { transform: scale(1.15); opacity: 0.5; }
+            100% { transform: scale(1.3); opacity: 0; }
+        }
+        .animate-pulse-ring {
+            animation: pulse-ring 1.5s cubic-bezier(0.215, 0.610, 0.355, 1) infinite;
+        }
+        /* Ajuste táctil para no seleccionar texto por accidente al presionar botones */
+        button, label, span {
+            user-select: none;
+            -webkit-user-select: none;
+        }
+    </style>
+</head>
+<body class="bg-industrial-950 text-slate-100 font-sans min-h-screen flex flex-col justify-between overflow-x-hidden">
+
+    <!-- NOTIFICACIONES TOAST (Mensajería de estado en iFrame) -->
+    <div id="toast" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-slate-900 border border-slate-700 px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 transition-all duration-300 transform translate-y-[-150%] opacity-0 max-w-[90%] w-full sm:w-auto">
+        <span id="toast-icon"></span>
+        <p id="toast-msg" class="text-sm font-semibold text-slate-200"></p>
+    </div>
+
+    <!-- PANTALLA 1: CONFIGURACIÓN INICIAL (Setup) -->
+    <section id="screen-setup" class="flex-1 flex flex-col p-6 max-w-lg mx-auto w-full justify-center">
+        <div class="text-center mb-6">
+            <div class="w-16 h-16 bg-gradient-to-tr from-industrial-action to-industrial-accent rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-lg shadow-blue-500/10">
+                <i data-lucide="sliders-horizontal" class="w-8 h-8 text-white"></i>
+            </div>
+            <h1 class="text-2xl font-bold tracking-tight text-white">Configuración de Despacho</h1>
+            <p class="text-sm text-slate-400 mt-1">Define las variables a capturar en tu flujo diario</p>
+        </div>
+
+        <div class="bg-industrial-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-5">
+            <!-- Selección de Campos -->
+            <div>
+                <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Campos de la Fila</h2>
+                <div class="grid grid-cols-2 gap-2.5" id="fields-checklist">
+                    <label class="flex items-center gap-3 bg-industrial-800 hover:bg-industrial-700 p-3 rounded-xl cursor-pointer border border-slate-700/50 transition">
+                        <input type="checkbox" value="fecha" checked class="w-5 h-5 rounded accent-industrial-accent">
+                        <span class="text-sm font-semibold">Fecha</span>
+                    </label>
+                    <label class="flex items-center gap-3 bg-industrial-800 hover:bg-industrial-700 p-3 rounded-xl cursor-pointer border border-slate-700/50 transition">
+                        <input type="checkbox" value="cliente" checked class="w-5 h-5 rounded accent-industrial-accent">
+                        <span class="text-sm font-semibold">Cliente</span>
+                    </label>
+                    <label class="flex items-center gap-3 bg-industrial-800 hover:bg-industrial-700 p-3 rounded-xl cursor-pointer border border-slate-700/50 transition">
+                        <input type="checkbox" value="producto" checked class="w-5 h-5 rounded accent-industrial-accent">
+                        <span class="text-sm font-semibold">Producto</span>
+                    </label>
+                    <label class="flex items-center gap-3 bg-industrial-800 hover:bg-industrial-700 p-3 rounded-xl cursor-pointer border border-slate-700/50 transition">
+                        <input type="checkbox" value="factura" checked class="w-5 h-5 rounded accent-industrial-accent">
+                        <span class="text-sm font-semibold">N° Factura</span>
+                    </label>
+                    <label class="flex items-center gap-3 bg-industrial-800 hover:bg-industrial-700 p-3 rounded-xl cursor-pointer border border-slate-700/50 transition">
+                        <input type="checkbox" value="cantidad" checked class="w-5 h-5 rounded accent-industrial-accent">
+                        <span class="text-sm font-semibold">Cantidad</span>
+                    </label>
+                    <label class="flex items-center gap-3 bg-industrial-800 hover:bg-industrial-700 p-3 rounded-xl cursor-pointer border border-slate-700/50 transition">
+                        <input type="checkbox" value="precio" checked class="w-5 h-5 rounded accent-industrial-accent">
+                        <span class="text-sm font-semibold">Precio ($)</span>
+                    </label>
+                    <label class="flex items-center gap-3 bg-industrial-800 hover:bg-industrial-700 p-3 rounded-xl cursor-pointer border border-slate-700/50 transition col-span-2">
+                        <input type="checkbox" value="despachador" checked class="w-5 h-5 rounded accent-industrial-accent">
+                        <span class="text-sm font-semibold">Despachador Por</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Ajustes de Google Sheets -->
+            <div class="border-t border-slate-800 pt-4">
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400">Conexión de Almacenamiento</h2>
+                    <span class="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded">Opcional para Pruebas</span>
+                </div>
+                
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">ID de la Hoja de Cálculo (Google Sheets ID)</label>
+                        <input type="text" id="sheet-id" placeholder="1A2B3C4D5E... (Vacío para demo local)" class="w-full bg-industrial-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-industrial-action transition">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">API Key de Google Cloud</label>
+                        <input type="password" id="sheet-key" placeholder="AIzaSy... (Vacío para demo local)" class="w-full bg-industrial-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-industrial-action transition">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">Nombre de la Pestaña / Hoja</label>
+                        <input type="text" id="sheet-name" value="Despachos" class="w-full bg-industrial-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-industrial-action transition">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Botón Inicializar -->
+            <button onclick="guardarConfiguracion()" class="w-full bg-gradient-to-r from-industrial-action to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold py-4 px-6 rounded-xl shadow-lg transition active:scale-[0.98] min-h-[48px] flex items-center justify-center gap-2">
+                Iniciar Panel de Despacho
+                <i data-lucide="arrow-right" class="w-5 h-5"></i>
+            </button>
+        </div>
+    </section>
+
+    <!-- PANTALLA 2: PANEL DE CONTROL DE VOZ (Main) -->
+    <section id="screen-main" class="hidden flex-1 flex flex-col p-4 max-w-lg mx-auto w-full justify-between">
+        <!-- Cabecera de Estado y Conectividad -->
+        <header class="flex items-center justify-between py-2 border-b border-slate-800 mb-4">
+            <!-- Semáforo de Red Dinámico -->
+            <div id="connection-status-badge" class="flex items-center gap-2 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-full shadow-inner transition duration-300">
+                <span id="connection-dot" class="w-2.5 h-2.5 rounded-full bg-industrial-accent animate-pulse"></span>
+                <span id="connection-text" class="text-xs font-bold tracking-wide text-slate-300">Cargando Conexión...</span>
+            </div>
+            <button onclick="volverAConfiguracion()" class="text-xs bg-industrial-800 hover:bg-industrial-700 text-slate-300 px-3 py-1.5 rounded-xl border border-slate-700 transition flex items-center gap-1">
+                <i data-lucide="settings" class="w-3.5 h-3.5"></i> Configurar
+            </button>
+        </header>
+
+        <!-- Tarjeta del Formulario Actual -->
+        <div class="bg-industrial-900 border border-slate-800 rounded-2xl p-4 shadow-xl mb-4 flex-1 flex flex-col justify-between">
+            <div>
+                <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
+                    <i data-lucide="file-text" class="w-4 h-4 text-industrial-action"></i> Registro Actual Detectado
+                </h2>
+                
+                <!-- Contenedor Dinámico de Campos Rellenados -->
+                <div id="dynamic-form-fields" class="grid grid-cols-2 gap-3">
+                    <!-- Rellenado por JS dinámicamente -->
+                </div>
+            </div>
+
+            <!-- Transcripción en Tiempo Real -->
+            <div class="mt-4 pt-4 border-t border-slate-800">
+                <div class="flex items-center justify-between mb-1">
+                    <p class="text-xs font-bold uppercase tracking-wider text-slate-500">Transcripción de voz:</p>
+                    <span id="voice-parsing-indicator" class="hidden text-[10px] text-industrial-accent font-semibold flex items-center gap-1">
+                        <i data-lucide="activity" class="w-3 h-3 animate-pulse"></i> Procesando Dictado...
+                    </span>
+                </div>
+                <div id="live-transcription-box" class="bg-industrial-950 border border-slate-800 rounded-xl p-3 text-sm italic text-slate-300 min-h-[60px] max-h-[80px] overflow-y-auto">
+                    Presiona el micrófono inferior y empieza a dictar tu despacho...
+                </div>
+            </div>
+        </div>
+
+        <!-- Guía Rápida de Dictado para Operador -->
+        <div class="bg-slate-900/50 border border-slate-800/80 rounded-xl p-3 mb-4">
+            <p class="text-xs font-bold text-slate-400 mb-1 flex items-center gap-1">
+                <i data-lucide="info" class="w-3.5 h-3.5 text-industrial-action"></i> ¿Cómo dictar?
+            </p>
+            <p class="text-[11px] text-slate-400 leading-relaxed">
+                Di de corrido: <strong class="text-white">"Cliente Polar, producto Harina, cantidad cincuenta, factura 1020, precio doce punto cinco, despachador Carlos"</strong>. El analizador inteligente se encargará de procesar tus palabras.
+            </p>
+        </div>
+
+        <!-- Zona de Acción Principal (Micrófono) -->
+        <div class="flex flex-col items-center justify-center pb-2">
+            
+            <!-- Botón Hero Central para el Pulgar -->
+            <div class="relative w-28 h-28 flex items-center justify-center">
+                <!-- Anillos de Onda en Grabación Activa (Efecto "Vivo") -->
+                <div id="ring-outer" class="hidden absolute inset-0 rounded-full bg-industrial-accent/20 animate-pulse-ring"></div>
+                <div id="ring-inner" class="hidden absolute inset-2 rounded-full bg-industrial-accent/30 animate-pulse-ring" style="animation-delay: 0.5s;"></div>
+
+                <!-- Botón de Micrófono Principal (Toggle) -->
+                <button id="mic-toggle-btn" onclick="toggleGrabacion()" class="relative z-10 w-24 h-24 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 border-4 border-slate-900 shadow-xl flex items-center justify-center transition active:scale-[0.95] focus:outline-none select-none">
+                    <div id="mic-icon-container" class="transition-transform duration-300">
+                        <i data-lucide="mic" class="w-10 h-10"></i>
+                    </div>
+                </button>
+            </div>
+
+            <p id="mic-status-text" class="text-sm font-semibold tracking-wide text-slate-400 mt-3 uppercase text-center">
+                Presiona para Dictar
+            </p>
+            
+            <!-- Guardado / Envío manual a Google Sheets con Respaldo Offline -->
+            <button id="save-row-btn" onclick="enviarFilaActual()" class="mt-4 w-full bg-industrial-action hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-3.5 px-6 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-blue-500/10 min-h-[48px] transition active:scale-[0.98]">
+                <i data-lucide="cloud-upload" class="w-5 h-5"></i>
+                <span>Registrar Despacho</span>
+            </button>
+        </div>
+    </section>
+
+    <!-- HISTORIAL RECIENTE / PREVIEW DE LA TABLA (Bottom Drawer) -->
+    <section id="screen-history" class="hidden border-t border-slate-800 bg-industrial-900 p-4">
+        <div class="max-w-lg mx-auto w-full">
+            <div class="flex items-center justify-between mb-2">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                    <i data-lucide="history" class="w-4 h-4 text-slate-400"></i> Historial del Turno
+                </h3>
+                <span id="pending-sync-indicator" class="hidden text-[10px] bg-industrial-warning/20 text-industrial-warning px-2 py-1 rounded-full font-bold flex items-center gap-1">
+                    <i data-lucide="loader" class="w-3 h-3 animate-spin"></i> Cola Offline Pendiente
+                </span>
+            </div>
+            
+            <div class="overflow-x-auto rounded-xl border border-slate-800 max-h-[160px] overflow-y-auto">
+                <table class="w-full text-left border-collapse text-xs">
+                    <thead>
+                        <tr class="bg-slate-950 text-slate-400" id="history-header">
+                            <!-- Cabeceras Dinámicas -->
+                        </tr>
+                    </thead>
+                    <tbody id="history-body" class="divide-y divide-slate-800 bg-industrial-900">
+                        <!-- Filas Guardadas en esta sesión -->
+                        <tr id="empty-history-row">
+                            <td colspan="10" class="p-4 text-center text-slate-500 italic">No hay despachos registrados todavía.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <script>
+        // Inicialización de Iconos Lucide
+        lucide.createIcons();
+
+        // Variables de estado global
+        let appConfig = {
+            campos: [],
+            sheetsId: '',
+            sheetsKey: '',
+            sheetsName: 'Despachos'
+        };
+
+        let filaActual = {};
+        let historialEnvios = [];
+        let grabacionActiva = false;
+        let recognition = null;
+        let isOnline = navigator.onLine;
+
+        // 1. MONITOREO DE CONECTIVIDAD E INTELIGENCIA OFFLINE
+        function actualizarEstadoConexion() {
+            isOnline = navigator.onLine;
+            const badge = document.getElementById('connection-status-badge');
+            const dot = document.getElementById('connection-dot');
+            const text = document.getElementById('connection-text');
+
+            if (isOnline) {
+                // Estado Conectado
+                badge.className = "flex items-center gap-2 bg-slate-900 border border-emerald-950/40 px-3 py-1.5 rounded-full shadow-inner transition duration-300";
+                dot.className = "w-2.5 h-2.5 rounded-full bg-industrial-accent animate-pulse";
+                text.innerText = "Conectado";
+                text.className = "text-xs font-bold tracking-wide text-emerald-400";
+                
+                // Intentar disparar sincronización de registros que fallaron o se guardaron sin internet
+                procesarSincronizacionPendiente();
+            } else {
+                // Estado Offline / Zonas de fallo de señal
+                badge.className = "flex items-center gap-2 bg-slate-900 border border-amber-950/40 px-3 py-1.5 rounded-full shadow-inner transition duration-300";
+                dot.className = "w-2.5 h-2.5 rounded-full bg-industrial-warning animate-pulse";
+                text.innerText = "Modo Offline (Dispositivo)";
+                text.className = "text-xs font-bold tracking-wide text-industrial-warning";
+                mostrarToast("Sin red. La app guardará localmente y se autosincronizará al volver.", "wifi-off");
+            }
+        }
+
+        // Eventos nativos de conectividad del dispositivo móvil
+        window.addEventListener('online', actualizarEstadoConexion);
+        window.addEventListener('offline', actualizarEstadoConexion);
+
+        // 2. CONFIGURACIÓN DEL DICTADO (Web Speech API)
+        function inicializarReconocimientoVoz() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                mostrarToast("La API de Voz no está disponible. Introduce los datos manualmente.", "alert-triangle");
+                return;
+            }
+
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'es-VE'; // Configuración regional para entonación y acento venezolano
+
+            recognition.onstart = () => {
+                grabacionActiva = true;
+                actualizarInterfazMic();
+            };
+
+            recognition.onresult = (event) => {
+                let textIntermedio = '';
+                document.getElementById('voice-parsing-indicator').classList.remove('hidden');
+
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        const finalSpeech = event.results[i][0].transcript;
+                        procesarVozAData(finalSpeech);
+                        document.getElementById('voice-parsing-indicator').classList.add('hidden');
+                    } else {
+                        textIntermedio += event.results[i][0].transcript;
+                    }
+                }
+                
+                // Mostrar feedback inmediato del flujo hablado del usuario
+                if (textIntermedio) {
+                    document.getElementById('live-transcription-box').innerText = textIntermedio;
+                }
+            };
+
+            recognition.onerror = (event) => {
+                console.error("Error SpeechRecognition:", event.error);
+                if (event.error === 'not-allowed') {
+                    mostrarToast("Permiso de micrófono denegado.", "mic-off");
+                }
+                detenerGrabacionVoz();
+            };
+
+            recognition.onend = () => {
+                if (grabacionActiva) {
+                    // Reconexión por si la API se apaga por silencios largos
+                    try {
+                        recognition.start();
+                    } catch (e) {
+                        console.error(e);
+                    }
+                } else {
+                    actualizarInterfazMic();
+                }
+            };
+        }
+
+        // 3. PARSEO DE VOZ INTELIGENTE CON CONVERSIÓN NUMÉRICA
+        function convertirTextoANumero(texto) {
+            const palabrasNumeros = {
+                "cero": 0, "uno": 1, "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5, "seis": 6, "siete": 7, "ocho": 8, "nueve": 9, "diez": 10,
+                "once": 11, "doce": 12, "trece": 13, "catorce": 14, "quince": 15, "veinte": 20, "treinta": 30, "cuarenta": 40, "cincuenta": 50,
+                "cien": 100, "ciento": 100, "mil": 1000
+            };
+            let limpio = texto.toLowerCase().trim();
+            if (palabrasNumeros[limpio] !== undefined) {
+                return palabrasNumeros[limpio];
+            }
+            // Soporte para decimales hablados "doce punto cinco" o "doce con cinco"
+            limpio = limpio.replace(/\s+con\s+/g, '.').replace(/\s+punto\s+/g, '.');
+            let parsed = parseFloat(limpio.replace(",", "."));
+            return isNaN(parsed) ? texto : parsed;
+        }
+
+        function procesarVozAData(texto) {
+            document.getElementById('live-transcription-box').innerText = texto;
+            const transcripcionMinuscula = texto.toLowerCase();
+
+            // Patrones dinámicos de procesamiento de entidades en español
+            const patrones = {
+                cliente: /(?:cliente|comprador|entregar a)\s+([a-zA-ZáéíóúÁÉÍÓÚñÑ\s\d\.]+?)(?=\s+(?:producto|cantidad|factura|precio|despachador|fecha|$))/i,
+                producto: /(?:producto|artículo|mercancía|bulto)\s+([a-zA-ZáéíóúÁÉÍÓÚñÑ0-9\s]+?)(?=\s+(?:cliente|cantidad|factura|precio|despachador|fecha|$))/i,
+                cantidad: /(?:cantidad|unidades|sacos|bultos|cajas)\s+([a-zA-Z0-9,\.\s]+?)(?=\s+(?:cliente|producto|factura|precio|despachador|fecha|$))/i,
+                factura: /(?:factura|control|número|recibo)\s+([0-9\s]+?)(?=\s+(?:cliente|producto|cantidad|precio|despachador|fecha|$))/i,
+                precio: /(?:precio|costo|monto|dólares)\s+([a-zA-Z0-9,\.\s]+?)(?=\s+(?:cliente|producto|cantidad|factura|despachador|fecha|$))/i,
+                despachador: /(?:despachador|por|despachado por|firma)\s+([a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+?)(?=\s+(?:cliente|producto|cantidad|factura|precio|fecha|$))/i,
+                fecha: /(?:fecha|día)\s+([a-zA-Z0-9ñÑ\s\/\-]+?)(?=\s+(?:cliente|producto|cantidad|factura|precio|despachador|$))/i
+            };
+
+            appConfig.campos.forEach(campo => {
+                if (patrones[campo]) {
+                    const coincidencia = transcripcionMinuscula.match(patrones[campo]);
+                    if (coincidencia && coincidencia[1]) {
+                        let valorFinal = coincidencia[1].trim();
+                        
+                        // Formatear si es número
+                        if (campo === 'cantidad' || campo === 'precio' || campo === 'factura') {
+                            valorFinal = convertirTextoANumero(valorFinal);
+                        }
+                        
+                        actualizarValorCampo(campo, valorFinal);
+                    }
+                }
+            });
+        }
+
+        function actualizarValorCampo(campo, valor) {
+            filaActual[campo] = valor;
+            const inputElement = document.getElementById(`input-${campo}`);
+            if (inputElement) {
+                inputElement.value = valor;
+                // Efecto de feedback visual vivo al cambiar el dato
+                inputElement.classList.add('border-industrial-accent', 'bg-slate-800');
+                setTimeout(() => {
+                    inputElement.classList.remove('border-industrial-accent', 'bg-slate-800');
+                }, 800);
+            }
+        }
+
+        // 4. FLUJOS DE CONFIGURACIÓN Y PANTALLAS
+        function guardarConfiguracion() {
+            const checkboxes = document.querySelectorAll('#fields-checklist input[type="checkbox"]');
+            appConfig.campos = [];
+            checkboxes.forEach(cb => {
+                if (cb.checked) appConfig.campos.push(cb.value);
+            });
+
+            if (appConfig.campos.length === 0) {
+                mostrarToast("Debes seleccionar al menos un campo para tu despacho", "alert-circle");
+                return;
+            }
+
+            appConfig.sheetsId = document.getElementById('sheet-id').value.trim();
+            appConfig.sheetsKey = document.getElementById('sheet-key').value.trim();
+            appConfig.sheetsName = document.getElementById('sheet-name').value.trim() || 'Despachos';
+
+            // Almacenar configuración de forma local para facilitar re-entradas rápidas
+            localStorage.setItem('despachovoz_config', JSON.stringify(appConfig));
+
+            renderizarFormularioDeRegistro();
+            renderizarHistorialHeaders();
+            cargarHistorialLocal();
+            
+            // Transición animada entre vistas
+            document.getElementById('screen-setup').classList.add('hidden');
+            document.getElementById('screen-main').classList.remove('hidden');
+            document.getElementById('screen-history').classList.remove('hidden');
+
+            inicializarReconocimientoVoz();
+            actualizarEstadoConexion();
+            mostrarToast("Configuración cargada correctamente", "check-circle");
+        }
+
+        function volverAConfiguracion() {
+            if (grabacionActiva) detenerGrabacionVoz();
+            document.getElementById('screen-main').classList.add('hidden');
+            document.getElementById('screen-history').classList.add('hidden');
+            document.getElementById('screen-setup').classList.remove('hidden');
+        }
+
+        function renderizarFormularioDeRegistro() {
+            const contenedor = document.getElementById('dynamic-form-fields');
+            contenedor.innerHTML = '';
+            filaActual = {};
+
+            appConfig.campos.forEach(campo => {
+                let labelName = campo.charAt(0).toUpperCase() + campo.slice(1);
+                if (campo === 'precio') labelName = 'Precio ($)';
+                if (campo === 'despachador') labelName = 'Despachado Por';
+                if (campo === 'factura') labelName = 'Factura N°';
+
+                let defaultValue = '';
+                if (campo === 'fecha') {
+                    const hoy = new Date();
+                    defaultValue = hoy.toLocaleDateString('es-VE');
+                }
+
+                filaActual[campo] = defaultValue;
+                const colSpan = (campo === 'cliente' || campo === 'producto') ? 'col-span-2' : 'col-span-1';
+
+                const fieldHTML = `
+                    <div class="${colSpan}">
+                        <label class="block text-xs font-bold text-slate-400 mb-1 capitalize">${labelName}</label>
+                        <input type="text" id="input-${campo}" value="${defaultValue}" 
+                            oninput="filaActual['${campo}'] = this.value"
+                            placeholder="Dictar o escribir..."
+                            class="w-full bg-industrial-800 border border-slate-700/60 rounded-xl px-3 py-3 text-sm text-white focus:outline-none focus:border-industrial-action transition min-h-[44px]">
+                    </div>
+                `;
+                contenedor.insertAdjacentHTML('beforeend', fieldHTML);
+            });
+        }
+
+        // 5. ANIMACIONES EXCLUSIVAS PARA ESTADOS ACTIVO/ESPERA
+        function toggleGrabacion() {
+            if (!recognition) {
+                inicializarReconocimientoVoz();
+            }
+
+            if (grabacionActiva) {
+                grabacionActiva = false;
+                recognition.stop();
+                mostrarToast("Grabación finalizada. Procesando datos...", "sparkles");
+            } else {
+                try {
+                    recognition.start();
+                    mostrarToast("Escuchando activamente...", "mic");
+                } catch (e) {
+                    inicializarReconocimientoVoz();
+                    recognition.start();
+                }
+            }
+        }
+
+        function detenerGrabacionVoz() {
+            grabacionActiva = false;
+            if (recognition) recognition.stop();
+            actualizarInterfazMic();
+        }
+
+        function actualizarInterfazMic() {
+            const btn = document.getElementById('mic-toggle-btn');
+            const iconContainer = document.getElementById('mic-icon-container');
+            const statusText = document.getElementById('mic-status-text');
+            const outerRing = document.getElementById('ring-outer');
+            const innerRing = document.getElementById('ring-inner');
+
+            if (grabacionActiva) {
+                // UI en modo grabación activa con retroalimentación esmeralda
+                btn.classList.remove('bg-slate-800', 'text-slate-300', 'border-slate-900');
+                btn.classList.add('bg-industrial-accent', 'text-white', 'border-slate-950');
+                iconContainer.innerHTML = '<i data-lucide="mic-off" class="w-10 h-10"></i>';
+                statusText.innerText = "Escuchando... Di campos y valores";
+                statusText.classList.add('text-industrial-accent');
+                
+                // Activar animación concéntrica "pulse-ring" en bucle
+                outerRing.classList.remove('hidden');
+                innerRing.classList.remove('hidden');
+            } else {
+                // UI en modo de espera
+                btn.classList.add('bg-slate-800', 'text-slate-300', 'border-slate-900');
+                btn.classList.remove('bg-industrial-accent', 'text-white', 'border-slate-950');
+                iconContainer.innerHTML = '<i data-lucide="mic" class="w-10 h-10"></i>';
+                statusText.innerText = "Presiona para Dictar";
+                statusText.classList.remove('text-industrial-accent');
+                
+                // Desactivar animaciones concéntricas
+                outerRing.classList.add('hidden');
+                innerRing.classList.add('hidden');
+            }
+            lucide.createIcons();
+        }
+
+        // 6. GESTIÓN DE ENVÍO DE DATOS RESILIENTE (NUBE VS LOCALSTORAGE)
+        async function enviarFilaActual() {
+            if (!filaActual.cliente && !filaActual.producto) {
+                mostrarToast("Por favor ingresa un Cliente o Producto antes de guardar.", "alert-circle");
+                return;
+            }
+
+            const botonEnvio = document.getElementById('save-row-btn');
+            botonEnvio.disabled = true;
+            botonEnvio.innerHTML = `<svg class="animate-spin h-5 w-5 mr-2 text-white" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Guardando...`;
+
+            // Estructurar el objeto de despacho
+            const nuevoDespacho = {
+                id: Date.now().toString(),
+                datos: { ...filaActual },
+                sincronizado: false
+            };
+
+            // Intentar envío a la nube si hay red
+            if (isOnline && appConfig.sheetsId && appConfig.sheetsKey) {
+                try {
+                    const rowData = appConfig.campos.map(campo => filaActual[campo] || '');
+                    const url = `https://sheets.googleapis.com/v4/spreadsheets/${appConfig.sheetsId}/values/${appConfig.sheetsName}:append?valueInputOption=USER_ENTERED&key=${appConfig.sheetsKey}`;
+                    
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            range: appConfig.sheetsName,
+                            majorDimension: "ROWS",
+                            values: [rowData]
+                        })
+                    });
+
+                    if (response.ok) {
+                        nuevoDespacho.sincronizado = true;
+                        mostrarToast("Guardado en Google Sheets", "cloud-lightning");
+                    } else {
+                        throw new Error("Fallo de API Google Sheets");
+                    }
+                } catch (err) {
+                    console.error("Error al enviar a la nube:", err);
+                    nuevoDespacho.sincronizado = false;
+                    guardarEnColaOffline(nuevoDespacho);
+                    mostrarToast("Error en API. Guardado local de contingencia.", "alert-triangle");
+                }
+            } else if (!isOnline) {
+                // Forzar guardado en almacenamiento local si está en modo offline explícito
+                nuevoDespacho.sincronizado = false;
+                guardarEnColaOffline(nuevoDespacho);
+                mostrarToast("Sin señal. Guardado de contingencia en el teléfono.", "save");
+            } else {
+                // Modo Simulado (No hay credenciales configuradas)
+                nuevoDespacho.sincronizado = true;
+                mostrarToast("Simulado: Guardado exitoso", "check-circle");
+            }
+
+            // Registrar en el historial visual
+            historialEnvios.unshift(nuevoDespacho);
+            guardarHistorialEnLocalStorage();
+            renderizarHistorialData();
+
+            // Limpieza del formulario
+            renderizarFormularioDeRegistro();
+            document.getElementById('live-transcription-box').innerText = "Presiona el micrófono para iniciar una nueva captura de despacho...";
+
+            botonEnvio.disabled = false;
+            botonEnvio.innerHTML = `<i data-lucide="cloud-upload" class="w-5 h-5"></i> <span>Registrar Despacho</span>`;
+            lucide.createIcons();
+        }
+
+        // Almacenar en la cola local de pendientes
+        function guardarEnColaOffline(despacho) {
+            let cola = JSON.parse(localStorage.getItem('despachovoz_cola_offline') || '[]');
+            cola.push(despacho);
+            localStorage.setItem('despachovoz_cola_offline', JSON.stringify(cola));
+            document.getElementById('pending-sync-indicator').classList.remove('hidden');
+        }
+
+        // Sincronizar automáticamente al recuperar la conexión
+        async function procesarSincronizacionPendiente() {
+            let cola = JSON.parse(localStorage.getItem('despachovoz_cola_offline') || '[]');
+            if (cola.length === 0) {
+                document.getElementById('pending-sync-indicator').classList.add('hidden');
+                return;
+            }
+
+            if (!appConfig.sheetsId || !appConfig.sheetsKey) {
+                return; // Sin credenciales para procesar
+            }
+
+            document.getElementById('pending-sync-indicator').classList.remove('hidden');
+            mostrarToast(`Conexión reestablecida. Sincronizando ${cola.length} registro(s) pendiente(s)...`, "loader");
+
+            let restantes = [];
+            for (let despacho of cola) {
+                try {
+                    const rowData = appConfig.campos.map(campo => despacho.datos[campo] || '');
+                    const url = `https://sheets.googleapis.com/v4/spreadsheets/${appConfig.sheetsId}/values/${appConfig.sheetsName}:append?valueInputOption=USER_ENTERED&key=${appConfig.sheetsKey}`;
+                    
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            range: appConfig.sheetsName,
+                            majorDimension: "ROWS",
+                            values: [rowData]
+                        })
+                    });
+
+                    if (response.ok) {
+                        // Marcar como sincronizado en el historial visual de esta sesión si existe
+                        const localHistorial = historialEnvios.find(h => h.id === despacho.id);
+                        if (localHistorial) {
+                            localHistorial.sincronizado = true;
+                        }
+                    } else {
+                        restantes.push(despacho);
+                    }
+                } catch (e) {
+                    restantes.push(despacho);
+                }
+            }
+
+            localStorage.setItem('despachovoz_cola_offline', JSON.stringify(restantes));
+            guardarHistorialEnLocalStorage();
+            renderizarHistorialData();
+
+            if (restantes.length === 0) {
+                document.getElementById('pending-sync-indicator').classList.add('hidden');
+                mostrarToast("¡Sincronización completa con Google Sheets!", "cloud-lightning");
+            } else {
+                mostrarToast(`Quedaron ${restantes.length} pendientes por reintentar.`, "alert-triangle");
+            }
+        }
+
+        // 7. PERSISTENCIA DE HISTORIAL LOCAL DE LA SESIÓN
+        function guardarHistorialEnLocalStorage() {
+            localStorage.setItem('despachovoz_historial', JSON.stringify(historialEnvios));
+        }
+
+        function cargarHistorialLocal() {
+            const guardado = localStorage.getItem('despachovoz_historial');
+            const cola = JSON.parse(localStorage.getItem('despachovoz_cola_offline') || '[]');
+            
+            if (guardado) {
+                try {
+                    historialEnvios = JSON.parse(guardado);
+                    renderizarHistorialData();
+                } catch (e) {
+                    historialEnvios = [];
+                }
+            }
+
+            if (cola.length > 0) {
+                document.getElementById('pending-sync-indicator').classList.remove('hidden');
+            } else {
+                document.getElementById('pending-sync-indicator').classList.add('hidden');
+            }
+        }
+
+        function renderizarHistorialHeaders() {
+            const headerRow = document.getElementById('history-header');
+            headerRow.innerHTML = '';
+            
+            // Columna extra de estado
+            headerRow.insertAdjacentHTML('beforeend', `<th class="p-2 border-b border-slate-800 font-bold text-slate-400">Status</th>`);
+
+            appConfig.campos.forEach(campo => {
+                let text = campo;
+                if (campo === 'precio') text = 'Precio ($)';
+                if (campo === 'despachador') text = 'Despachado';
+                const th = `<th class="p-2 border-b border-slate-800 capitalize font-bold">${text}</th>`;
+                headerRow.insertAdjacentHTML('beforeend', th);
+            });
+        }
+
+        function renderizarHistorialData() {
+            const tbody = document.getElementById('history-body');
+            tbody.innerHTML = '';
+
+            if (historialEnvios.length === 0) {
+                tbody.innerHTML = `
+                    <tr id="empty-history-row">
+                        <td colspan="${appConfig.campos.length + 1}" class="p-4 text-center text-slate-500 italic">No hay despachos registrados todavía.</td>
+                    </tr>
+                `;
+                return;
+            }
+
+            historialEnvios.forEach(despacho => {
+                let tr = `<tr class="hover:bg-slate-800/40 transition">`;
+                
+                // Celda de estado de sincronización
+                if (despacho.sincronizado) {
+                    tr += `<td class="p-2 border-b border-slate-800/40 text-emerald-400 flex items-center justify-center pt-3" title="Sincronizado"><i data-lucide="cloud-check" class="w-4 h-4"></i></td>`;
+                } else {
+                    tr += `<td class="p-2 border-b border-slate-800/40 text-industrial-warning flex items-center justify-center pt-3" title="Pendiente offline"><i data-lucide="clock" class="w-4 h-4 animate-pulse"></i></td>`;
+                }
+
+                appConfig.campos.forEach(campo => {
+                    const val = despacho.datos[campo] || '-';
+                    tr += `<td class="p-2 text-slate-300 font-medium whitespace-nowrap">${val}</td>`;
+                });
+                tr += `</tr>`;
+                tbody.insertAdjacentHTML('beforeend', tr);
+            });
+            lucide.createIcons();
+        }
+
+        // 8. NOTIFICACIÓN TOAST INTUITIVA
+        function mostrarToast(mensaje, icono = "info") {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toast-msg');
+            const toastIcon = document.getElementById('toast-icon');
+
+            toastMsg.innerText = mensaje;
+            toastIcon.innerHTML = `<i data-lucide="${icono}" class="w-5 h-5"></i>`;
+            lucide.createIcons();
+
+            toast.classList.remove('translate-y-[-150%]', 'opacity-0');
+            toast.classList.add('translate-y-0', 'opacity-100');
+
+            setTimeout(() => {
+                toast.classList.add('translate-y-[-150%]', 'opacity-0');
+                toast.classList.remove('translate-y-0', 'opacity-100');
+            }, 3500);
+        }
+
+        // 9. EVENTOS AL CARGAR LA PWA
+        window.addEventListener('load', () => {
+            const guardado = localStorage.getItem('despachovoz_config');
+            if (guardado) {
+                try {
+                    const parsed = JSON.parse(guardado);
+                    appConfig = parsed;
+                    
+                    document.getElementById('sheet-id').value = parsed.sheetsId || '';
+                    document.getElementById('sheet-key').value = parsed.sheetsKey || '';
+                    document.getElementById('sheet-name').value = parsed.sheetsName || 'Despachos';
+
+                    const checkboxes = document.querySelectorAll('#fields-checklist input[type="checkbox"]');
+                    checkboxes.forEach(cb => {
+                        cb.checked = parsed.campos.includes(cb.value);
+                    });
+                } catch (e) {
+                    console.error("Error al cargar la persistencia local de configuración", e);
+                }
+            }
+            actualizarEstadoConexion();
+        });
+    </script>
+</body>
+</html>
